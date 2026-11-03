@@ -89,10 +89,11 @@ export function mountTeamApp(root, driver) {
   // ---------- load ----------
   async function refresh() {
     let v;
-    try { v = await driver.load(); } catch (e) { root.replaceChildren(h('div', { class: 'center' }, h('div', { class: 'card joinbox' }, h('h2', {}, 'Cannot reach the game'), h('p', { class: 'err' }, e.message), h('a', { class: 'btn', href: 'index.html' }, 'Back to join')))); return; }
+    try { v = await driver.load(); } catch (e) { if (S.view) return;   // keep the screen when a poll fails on a slow network
+      root.replaceChildren(h('div', { class: 'center' }, h('div', { class: 'card joinbox' }, h('h2', {}, 'Cannot reach the game'), h('p', { class: 'err' }, e.message), h('a', { class: 'btn', href: 'index.html' }, 'Back to join')))); return; }
     if (v.state?.teams?.[v.teamId]) v.name = v.state.teams[v.teamId].name;
     const newRound = !S.view || S.round !== v.round || (!S.view.state && v.state);
-    const sig = JSON.stringify([v.status, v.round, v.submitted, v.decision?.moves, v.timer && [v.timer.endsAt, v.timer.paused], v.state?.version, !!v.reveal, !!v.final, v.publicTeams.map(t => [t.id, t.name, t.hist.length]), v.state?.regions?.[v.region]?.events]);
+    const sig = JSON.stringify([v.status, v.round, v.submitted, v.decision?.moves, v.timer && [v.timer.endsAt, v.timer.paused], v.state?.version, !!v.reveal, !!v.final, v.publicTeams.map(t => [t.id, t.name, t.hist.length]), v.state?.regions?.[v.region]?.events, v.nextAt]);
     const unchanged = S.view && sig === S.sig && !S.forceRender;
     S.sig = sig; S.forceRender = false;
     S.view = v;
@@ -104,7 +105,7 @@ export function mountTeamApp(root, driver) {
       if (len > seen && !S.overlay) { S.overlay = v.reveal && v.reveal.round === len ? { type: 'reveal', len } : { type: 'results', len }; S.rv = 0; }
       else if (!S.overlay && v.status === 'done' && len <= seen && !S.finalSeen) S.overlay = { type: 'final', len };
     }
-    if (unchanged && S.view.state && (S.overlay?.type || '') === S.lastOverlay) return;
+    if (S.view.state && (S.overlay?.type || '') === S.lastOverlay && (unchanged || S.overlay)) return;   // never rebuild the page under an open overlay: a slow network would detach the buttons mid-click
     S.lastOverlay = S.overlay?.type || '';
     render();
   }
@@ -154,6 +155,7 @@ export function mountTeamApp(root, driver) {
     const tb = root.querySelector('#timer'); if (!tb || !S.view) return;
     const ms = timerMs(S.view.timer), n = tb.querySelector('.n'), s0 = S.view.status;
     if (s0 === 'open' && ms != null) { n.textContent = mmss(ms); tb.classList.toggle('low', ms < 30000 && !S.view.timer.paused); tb.lastChild.textContent = S.view.timer.paused ? 'paused' : ''; }
+    else if (s0 === 'locked' && S.view.nextAt && S.view.nextAt > Date.now()) { n.textContent = mmss(S.view.nextAt - Date.now()); tb.classList.remove('low'); tb.lastChild.textContent = 'next round'; }
     else { n.textContent = s0 === 'open' ? 'Open' : s0 === 'locked' ? 'Ready' : s0 === 'done' ? 'End' : '--'; tb.classList.remove('low'); tb.lastChild.textContent = ''; }
   }
 

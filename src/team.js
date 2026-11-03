@@ -4,7 +4,7 @@ const net = makeNet(), q = new URLSearchParams(location.search);
 const code = (q.get('code') || '').toUpperCase();
 let me = null;
 try { me = q.get('t') ? { teamToken: q.get('t') } : JSON.parse(sessionStorage.getItem('sys:me:' + code)); } catch { /* none */ }
-if (!code || !me) location.href = withLocal('index.html');
+if (!code || !me) { const { mountJoin } = await import('./join.js'); mountJoin(document.getElementById('app'), { staff: false }); }
 let round = 1;
 const driver = {
   poll: true,
@@ -14,10 +14,10 @@ const driver = {
     return {
       code, key: code, teamId: r.teamId, name: r.name, status: pub.status || 'lobby', round, timer: pub.timer || null,
       state: view?.state || null, region: view?.state?.teams?.[r.teamId]?.region || pub.teams?.find(t => t.id === r.teamId)?.region || null,
-      submitted: !!r.draft, decision: r.draft, publicTeams: pub.teams || [], events: view?.events || pub.events || {}, final: pub.final || null, reveal: view?.reveal || null,
+      submitted: !!r.draft, decision: r.draft, publicTeams: pub.teams || [], events: view?.events || pub.events || {}, final: pub.final || null, reveal: view?.reveal || null, nextAt: pub.nextAt || null,
     };
   },
   submit: d => net.submit(code, me.teamToken, round, d),
   subscribe: cb => net.subscribe(code, cb),
 };
-mountTeamApp(document.getElementById('app'), driver);
+if (code && me) mountTeamApp(document.getElementById('app'), driver);

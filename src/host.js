@@ -12,12 +12,15 @@ import { buildPublic, buildViews, roundNews } from './publish.js';
 const net = makeNet(), root = document.getElementById('app');
 const q = new URLSearchParams(location.search);
 let lastPrev = null, addedInfo = null, lastJson = '', token = null, code = null, V = null, busy = false, selTeam = null, started = false;
-const opt = { autoTimer: true, autoAll: false, dur: 300, fill: 4, seed: 1 };
+const QP = new URLSearchParams(location.search);
+const opt = { autoTimer: true, autoAll: true, dur: Number(QP.get('dur')) || 300, brk: Number(QP.get('break')) || 45, fill: 4, seed: 1 };
+let autoPaused = false, opening = false;     // emergency pause of the automatic flow (break or timer)
 const save = () => { try { localStorage.setItem('sys:host:last', JSON.stringify({ code, token })); } catch { /* */ } };
 const status = () => V.session.status, round = () => V.session.round;
 
 async function login() {
   const want = (q.get('code') || '').toUpperCase();
+  if (q.get('new')) { try { localStorage.removeItem('sys:host:last'); } catch { /* */ } return false; }
   try {
     const last = JSON.parse(localStorage.getItem('sys:host:last'));
     if (last && (!want || last.code === want)) { token = last.token; code = last.code; await net.hostGet(code, token); return true; }
@@ -40,9 +43,11 @@ async function start() {
 async function load() {
   if (busy) return;
   let nv;
-  try { nv = await net.hostGet(code, token); } catch (e) { V = null; return loginScreen(); }
+  try { nv = await net.hostGet(code, token); }
+  catch (e) { if (V && !/not authorized/i.test(e.message)) return; V = null; return loginScreen(); }   // a slow or dropped request must not throw the console back to login
   const changed = JSON.stringify(nv) !== lastJson; lastJson = JSON.stringify(nv); V = nv;
   await syncSubmitted();
+  await syncRoster();
   if (!changed && root.firstChild) return;      // keep the DOM steady so buttons stay clickable
   if (document.activeElement?.tagName === 'INPUT' && document.activeElement.type === 'number') return;
   render();
@@ -58,7 +63,12 @@ const roster = () => [
 ];
 const submittedMap = () => Object.fromEntries(Object.keys(V.decisions || {}).map(k => [k, true]));
 function pub(st, over = {}) {
-  return buildPublic({ status: st, round: round(), state: V.state, roster: V.state ? [] : roster(), timer: V.public?.timer || null, submitted: submittedMap(), rankings: V.public?.final?.rankings || null, news: V.public?.news || null, ...over });
+  return buildPublic({ status: st, round: round(), state: V.state, roster: V.state ? [] : roster(), timer: V.public?.timer || null, submitted: submittedMap(), rankings: V.public?.final?.rankings || null, news: V.public?.news || null, nextAt: V.public?.nextAt || null, ...over });
+}
+async function syncRoster() {
+  if (!V || status() !== 'lobby') return;
+  const have = (V.public?.teams || []).map(t => t.id).sort().join(), want = humans().map(t => t.id).sort().join();
+  if (have !== want) { await setRoster(roster().filter(t => !t.bot || false).map(t => t)); V = await net.hostGet(code, token); lastJson = ''; }
 }
 async function syncSubmitted() {
   if (!V || status() !== 'open' || !V.state) return;
@@ -72,28 +82,27 @@ async function syncSubmitted() {
 async function setRoster(list) { await net.hostPublish(code, token, 'lobby', buildPublic({ status: 'lobby', round: 1, roster: list })); }
 
 // bots keep their profile in the public roster entry via `bot` (profile name)
-async function autoDistribute() {
-  const r = roster(), hs = r.filter(t => !t.bot), regs = assignRegions(hs.length, opt.seed);
-  hs.forEach((t, i) => (t.region = regs[i]));
-  await setRoster(r);
-}
-async function fillBots() {
-  const r = roster();
-  const counts = Object.fromEntries(D.REGION_IDS.map(x => [x, r.filter(t => t.region === x).length]));
-  let k = r.filter(t => t.bot).length;
-  for (const reg of D.REGION_IDS) while (counts[reg] < opt.fill) { r.push({ id: 'bot' + (k + 1), name: BOT_NAMES[k % BOT_NAMES.length], region: reg, bot: PROFILES[(k + opt.seed) % PROFILES.length] }); counts[reg]++; k++; }
-  await setRoster(r);
-}
 async function startGame() {
-  const r = roster();
-  const state = createGame({ seed: opt.seed, teams: r.map(t => ({ id: t.id, name: t.name, region: t.region, bot: t.bot || null })) });
-  V.state = state;
+  const hs = roster().filter(t => !t.bot);
+  if (!hs.length) throw new Error('No teams have joined yet.');
+  const seed = Math.floor(Math.random() * 1e6) + 1, regs = assignRegions(hs.length, seed);   // balanced across the four, random order
+  const r = hs.map((t, i) => ({ ...t, region: regs[i] }));
+  const counts = Object.fromEntries(D.REGION_IDS.map(x => [x, r.filter(t => t.region === x).length]));
+  let k = 0;
+  for (const reg of D.REGION_IDS) while (counts[reg] < opt.fill) { r.push({ id: 'bot' + (k + 1), name: BOT_NAMES[(k + seed) % BOT_NAMES.length], region: reg, bot: PROFILES[(k + seed) % PROFILES.length] }); counts[reg]++; k++; }
+  const state = createGame({ seed, teams: r.map(t => ({ id: t.id, name: t.name, region: t.region, bot: t.bot || null })) });
+  V.state = state; V.public = { ...(V.public || {}), nextAt: null };
   await net.hostPublish(code, token, 'locked', buildPublic({ status: 'locked', round: 1, state }), state, buildViews(state, humans().map(t => t.id)));
+  autoPaused = false;
+  await openRound();
 }
 async function openRound() {
+  const g0 = await net.hostGet(code, token);   // never reopen a finished game or a round that is already open
+  if (g0.session.status !== 'locked' || !g0.state || g0.state.phase === 'done') return;
+  V = g0;   // publish from the fresh copy
   const ms = opt.dur * 1000;
   const timer = { endsAt: Date.now() + ms, paused: false, remainingMs: ms, durationMs: ms };
-  await net.hostPublish(code, token, 'open', pub('open', { timer }));
+  await net.hostPublish(code, token, 'open', pub('open', { timer, nextAt: null }));
 }
 async function timerOp(op) {
   const t = { ...(V.public.timer || {}) }, now = Date.now();
@@ -105,16 +114,19 @@ async function timerOp(op) {
 async function resolve() {
   if (busy) return; busy = true;
   try {
+    const g0 = await net.hostGet(code, token);   // the cached copy can be stale on a slow network: only resolve a round that is really open
+    if (g0.session.status !== 'open') return;
     await net.hostPublish(code, token, 'locked', pub('locked'));   // closes submissions
     const g = await net.hostGet(code, token), s = g.state, r = g.session.round, decisions = {};
     for (const [id, t] of Object.entries(s.teams)) decisions[id] = t.bot ? picksToDecision(s, id, botPicks(s, id, t.bot, s.seed)) : g.decisions[id];
     const ns = resolveRound(s, decisions), done = ns.phase === 'done';
     const rk = done ? rankings(ns) : null;
     lastPrev = s;
-    await net.commitRound(code, token, r, ns, buildPublic({ status: done ? 'done' : 'locked', round: ns.round, state: ns, rankings: rk, news: roundNews(s, ns) }), buildViews(ns, g.teams.map(t => t.id), s), done);
+    await net.commitRound(code, token, r, ns, buildPublic({ status: done ? 'done' : 'locked', round: ns.round, state: ns, rankings: rk, news: roundNews(s, ns), nextAt: done ? null : Date.now() + opt.brk * 1000 }), buildViews(ns, g.teams.map(t => t.id), s), done);
   } finally { busy = false; await load(); }
 }
 async function overrideEvent(rid, id) {
+  if (status() !== 'locked' || V.state?.phase === 'done') return;   // only during the break, never while a round is open
   const ns = JSON.parse(JSON.stringify(V.state));
   if (id) ns.regions[rid].events[round()] = id; else delete ns.regions[rid].events[round()];
   await net.hostPublish(code, token, 'locked', pub('locked', { state: ns, news: V.public?.news || null }), ns, buildViews(ns, humans().map(t => t.id), lastPrev && lastPrev.round === ns.round - 1 ? lastPrev : null));
@@ -124,12 +136,21 @@ async function restart() {
   await net.hostReset(code, token);
   await setRoster(humans().map(t => ({ id: t.id, name: t.name, region: entry(t.id)?.region || null, bot: null })));
 }
+window.__host = { get V() { return V; }, get paused() { return autoPaused; }, get busy() { return busy; } };   // test hook
+// The whole round loop: open when the break ends, resolve on time or when every human is in.
 function tick() {
-  if (!V || status() !== 'open' || busy) return;
+  if (!V || busy) return;
+  const now = Date.now();
+  if (status() === 'locked' && V.state && V.state.phase !== 'done' && V.public?.nextAt) {
+    if (!autoPaused && !opening && now >= V.public.nextAt) { opening = true; openRound().catch(e => console.error(e)).finally(() => { opening = false; load(); }); }
+    const el = document.getElementById('hostclock'); if (el) el.textContent = 'Next ' + mmss(Math.max(0, V.public.nextAt - now));
+    return;
+  }
+  if (status() !== 'open') return;
   const hs = humans(), subs = hs.filter(t => V.decisions?.[t.id]).length, tm = V.public?.timer;
   const ms = tm ? timerMs(tm) : null;
-  if (opt.autoTimer && tm && !tm.paused && ms === 0) resolve();
-  else if (opt.autoAll && hs.length && subs === hs.length) resolve();
+  if (!autoPaused && opt.autoTimer && tm && !tm.paused && ms === 0) resolve();
+  else if (!autoPaused && opt.autoAll && hs.length && subs === hs.length) resolve();
   const el = document.getElementById('hostclock');
   if (el && tm) el.textContent = mmss(timerMs(tm));
 }
@@ -153,21 +174,11 @@ function regionSel(t, list) {
 }
 function lobby(side, main) {
   const ts = roster();
-  side.append(h('div', { class: 'glass card' }, h('h3', {}, 'Setup'),
-    h('div', { class: 'row' }, h('button', { class: 'btn', id: 'dist', onclick: act(autoDistribute) }, 'Auto-distribute regions')),
-    h('div', { class: 'row', style: { marginTop: '10px' } }, h('span', {}, 'Fill each region to'), h('select', { id: 'fill', onchange: e => (opt.fill = Number(e.target.value)) }, [3, 4].map(n => h('option', { value: n, selected: opt.fill === n }, n + ' networks'))),
-      h('button', { class: 'btn', id: 'fillbtn', onclick: act(fillBots) }, 'Add bots')),
-    h('div', { class: 'row', style: { marginTop: '10px' } }, h('span', {}, 'Seed'), h('input', { class: 'inp', type: 'number', value: opt.seed, style: { width: '80px' }, onchange: e => (opt.seed = Number(e.target.value) || 1) })),
-    h('div', { class: 'row', style: { marginTop: '14px' } }, h('button', { class: 'btn gold big', id: 'startgame', disabled: !ts.length || ts.some(t => !t.region), onclick: act(startGame) }, 'Start game')),
-    ts.some(t => !t.region) ? h('div', { class: 'muted', style: { marginTop: '6px' } }, 'Every team needs a region.') : null));
-  const nm = h('input', { class: 'inp', id: 'addname', placeholder: 'Team name', 'aria-label': 'Late team name', style: { flex: 1 } });
-  side.append(h('div', { class: 'card' }, h('h3', {}, 'Add a team'),
-    h('div', { class: 'muted', style: { marginBottom: '6px' } }, 'For a late arrival. Give them the rejoin link.'),
-    h('div', { class: 'row' }, nm, h('button', { class: 'btn', id: 'addteam', onclick: act(async () => { if (nm.value.trim().length < 2) throw new Error('Type a team name.'); const r = await net.hostAddTeam(code, token, nm.value.trim()); addedInfo = { name: nm.value.trim(), token: r.teamToken, url: location.origin + location.pathname.replace('host.html', 'team.html') + '?code=' + code + '&t=' + encodeURIComponent(r.teamToken) + (new URLSearchParams(location.search).get('local') === '1' ? '&local=1' : '') }; }) }, 'Add team')),
-    addedInfo ? h('div', { id: 'addedinfo', style: { marginTop: '8px' } }, h('div', { class: 'chip good' }, addedInfo.name + ' added'), h('div', { class: 'muted', style: { fontSize: '12px', marginTop: '4px' } }, 'Rejoin code'), h('div', { class: 'serif', style: { fontSize: '22px', wordBreak: 'break-all' } }, addedInfo.token), h('a', { href: addedInfo.url, target: '_blank', style: { fontSize: '13px', wordBreak: 'break-all' } }, addedInfo.url)) : null));
-  main.append(h('div', { class: 'glass card' }, h('h3', {}, `Teams (${ts.length})`), ts.length ? h('table', { class: 't' }, h('tr', {}, ['Team', 'Type', 'Region', ''].map(x => h('th', {}, x))),
-    ts.map(t => h('tr', {}, h('td', {}, t.name), h('td', {}, t.bot ? 'Bot: ' + t.bot : 'Students'), h('td', {}, regionSel(t)),
-      h('td', {}, t.bot ? h('button', { class: 'btn', style: { minHeight: '30px', padding: '2px 10px' }, onclick: act(async () => setRoster(roster().filter(x => x.id !== t.id))) }, 'Remove') : null)))) : h('div', { class: 'muted' }, 'Waiting for teams to join...')));
+  side.append(h('div', { class: 'glass card' }, h('h3', {}, 'Start'),
+    h('div', { class: 'muted', style: { marginBottom: '10px' } }, 'Students open team.html, type this code and a team name. Press Start when they are in. Regions are assigned at random and bots fill every region to four.'),
+    h('button', { class: 'btn gold big', id: 'startgame', disabled: !ts.length, onclick: act(startGame) }, 'Start game'),
+    h('div', { class: 'muted', style: { marginTop: '8px' } }, 'Keep this tab open: it runs the rounds.')));
+  main.append(h('div', { class: 'glass card' }, h('h3', {}, `Teams joined (${ts.length})`), ts.length ? h('div', { class: 'joined hostjoined' }, ts.map(t => h('span', { class: 'jchip small' }, hexEmblem(t.name, null, 28), t.name))) : h('div', { class: 'muted' }, 'Waiting for teams to join...')));
 }
 
 function running(side, main) {
@@ -176,17 +187,16 @@ function running(side, main) {
   const tm = V.public?.timer, ms = tm ? timerMs(tm) : null;
   const ctl = h('div', { class: 'glass card' }, h('h3', {}, done ? 'Game over' : `Round ${r}: ${ROUND_TITLES[r - 1]}`),
     h('div', { class: 'row' }, h('span', { class: 'chip', id: 'hoststatus' }, st), h('span', { class: 'chip' }, `${subs} of ${hs.length} teams in`)));
+  const nx = V.public?.nextAt;
   if (st === 'open') ctl.append(h('div', { class: 'serif', id: 'hostclock', style: { fontSize: '64px', margin: '8px 0' } }, ms != null ? mmss(ms) : 'Open'));
-  if (st === 'locked' && !done) ctl.append(h('div', { class: 'row', style: { margin: '10px 0' } }, h('select', { id: 'dur', onchange: e => (opt.dur = Number(e.target.value)) },
-    [[600, '10 min'], [300, '5 min'], [240, '4 min'], [180, '3 min'], [120, '2 min'], [60, '1 min'], [20, '20 s (fast test)']].map(([v, l]) => h('option', { value: v, selected: opt.dur === v }, l))),
-    h('button', { class: 'btn gold big', id: 'openround', onclick: act(openRound) }, 'Open round ' + r)));
-  if (st === 'open') ctl.append(h('div', { class: 'row' },
-    h('button', { class: 'btn', onclick: act(() => timerOp({ add: 60 })) }, 'Extend +1 min'),
-    tm?.paused ? h('button', { class: 'btn', onclick: act(() => timerOp({ resume: true })) }, 'Resume') : h('button', { class: 'btn', onclick: act(() => timerOp({ pause: true })) }, 'Pause'),
-    h('button', { class: 'btn red', id: 'resolve', onclick: act(resolve) }, 'Advance (resolve now)')));
-  if (!done) ctl.append(h('label', { class: 'row', style: { marginTop: '10px' } }, h('input', { type: 'checkbox', checked: opt.autoTimer, onchange: e => (opt.autoTimer = e.target.checked) }), 'Resolve when the timer ends'),
-    h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: opt.autoAll, onchange: e => (opt.autoAll = e.target.checked) }), 'Resolve when every team is in'));
-  ctl.append(h('div', { class: 'row', style: { marginTop: '12px' } }, h('button', { class: 'btn', onclick: act(restart) }, 'Reset')));
+  else if (st === 'locked' && !done) ctl.append(h('div', { class: 'serif', id: 'hostclock', style: { fontSize: '48px', margin: '8px 0' } }, nx ? 'Next ' + mmss(Math.max(0, nx - Date.now())) : 'Ready'));
+  if (!done) ctl.append(h('div', { class: 'muted' }, autoPaused ? 'Automatic flow is paused.' : 'Runs by itself. Keep this tab open.'));
+  if (!done) ctl.append(h('div', { class: 'row emerg', style: { marginTop: '10px' } },
+    autoPaused || tm?.paused ? h('button', { class: 'btn', id: 'resumebtn', onclick: act(async () => { autoPaused = false; if (tm?.paused) await timerOp({ resume: true }); }) }, 'Resume')
+      : h('button', { class: 'btn', id: 'pausebtn', onclick: act(async () => { autoPaused = true; if (st === 'open') await timerOp({ pause: true }); }) }, 'Pause'),
+    st === 'open' ? h('button', { class: 'btn', onclick: act(() => timerOp({ add: 60 })) }, 'Extend +1 min') : null,
+    h('button', { class: 'btn red', id: 'skip', onclick: act(async () => { autoPaused = false; if (st === 'open') await resolve(); else if (st === 'locked') await openRound(); }) }, st === 'open' ? 'Skip: resolve now' : 'Skip: open now')));
+  ctl.append(h('div', { class: 'row', style: { marginTop: '12px' } }, h('button', { class: 'btn', onclick: act(restart) }, 'Reset'), h('button', { class: 'btn', id: 'newgame', onclick: () => { try { localStorage.removeItem('sys:host:last'); } catch { /* */ } location.href = location.pathname + '?new=1'; } }, 'New game')));
   side.append(ctl);
 
   // per-region submitted counts

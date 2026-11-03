@@ -11,9 +11,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const shots = join(here, 'shots'); mkdirSync(shots, { recursive: true });
 const require = createRequire(join(execSync('npm root -g').toString().trim(), 'x.js'));
 const { chromium } = require('playwright');
-const port = Number(process.env.PORT) || 8096, base = `http://localhost:${port}/`;
-let srv = null;
-try { await fetch(base); } catch { srv = spawn(process.execPath, [join(here, '..', 'serve.mjs'), String(port)], { stdio: 'ignore' }); await new Promise(r => setTimeout(r, 800)); }
+const port = Number(process.env.PORT) || 8200 + Math.floor(Math.random() * 700), base = `http://localhost:${port}/`;   // always our own server, on a fresh port
+const srv = spawn(process.execPath, [join(here, '..', 'serve.mjs'), String(port)], { stdio: 'ignore' });
+await new Promise(r => setTimeout(r, 800));
 let browser;
 try { browser = await chromium.launch({ channel: 'chrome' }); } catch { browser = await chromium.launch(); }
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 860 } });
@@ -34,9 +34,10 @@ const inView = (p, sel) => p.$eval(sel, e => { const r = e.getBoundingClientRect
 async function mustSee(p, sel, what) { assert.ok(await inView(p, sel), `${what} (${sel}) visible without scrolling at 768px tall`); }
 // The projector cycles slides; step through them with the arrow keys until the wanted text shows.
 async function projFind(page, text, maxSteps = 8) {
+  if (process.env.LIVE === '1') maxSteps *= 3;   // the live projector polls the database, so give it longer to catch up
   for (let k = 0; k < maxSteps; k++) {
     if ((await page.textContent('body')).includes(text)) return true;
-    await page.keyboard.press('ArrowRight'); await page.waitForTimeout(250);
+    await page.keyboard.press('ArrowRight'); await page.waitForTimeout(process.env.LIVE === '1' ? 700 : 250);
   }
   return false;
 }
@@ -78,10 +79,10 @@ async function playRound(p, round, tag, extra = {}) {
   const choose = async fallback => {
     for (let slot = 0; slot < 3; slot++) {
       await p.waitForSelector('.otile');
-      const open = await p.$$('.otile:not(.locked)');
-      const pick = fallback ? 0 : (round + (extra.salt || 0) + slot) % open.length;
+      const nOpen = (await p.$$('.otile:not(.locked)')).length;
+      const pick = fallback ? 0 : (round + (extra.salt || 0) + slot) % nOpen;
       if (extra.shots && !fallback) await snap(p, `${tag}-r${round}-card${slot + 1}`);
-      await open[pick].click();
+      await p.click(`.otile:not(.locked) >> nth=${pick}`);   // locators, so a re-render from a slow network cannot detach the target
       if (slot === 0 && await p.$('.dials')) {   // market card: set the dial, as a team would
         await p.click(`[data-dial="${['light', 'steady', 'all'][(extra.salt || 0) % 3]}"]`);
         if (extra.shots && !fallback) await snap(p, `${tag}-r${round}-dial`);
@@ -146,68 +147,61 @@ await solo.close();
 
 // ---------- host + teams + projector, full game ----------
 log('multi...');
-const host = await open('host.html?' + Q);
+const host = await open('host.html?' + Q + '&dur=' + (process.env.LIVE === '1' ? 150 : 60) + '&break=' + (process.env.LIVE === '1' ? 25 : 15));   // short timer and break so the automatic flow runs fast
 await host.fill('.field', '1234');
 await host.click('#create');
 await host.waitForSelector('#joincode');
 const code = await host.textContent('#joincode');
 const proj = await open('projector.html?' + Q + '&code=' + code, { width: 1920, height: 1080 });
 const names = [PRE + 'Alder Health', PRE + 'Birch Care', PRE + 'Cedar Team'];
+const joinOn = async (name, vp) => {   // students open team.html, type the code and a team name
+  const p = await open('team.html?' + Q + '&code=' + code + '&name=' + encodeURIComponent(name), vp);
+  await p.waitForSelector('#join');
+  await p.click('#join'); await p.waitForFunction(() => location.search.includes('t='));
+  return p;
+};
 const teams = [];
 for (const n of names) {
-  const p = await open('index.html?' + Q + '&code=' + code + '&name=' + encodeURIComponent(n), teams.length === 0 ? VP : undefined);
-  if (!teams.length) await snap(p, 'title-screen');
-  await p.click('#join'); await p.waitForURL(/team\.html/);
+  const p = await joinOn(n, teams.length === 0 ? VP : undefined);
+  if (!teams.length) await snap(p, 'join-screen');
   teams.push(p);
 }
-await host.waitForSelector('text=' + names[0]);
-await host.fill('#addname', PRE + 'Late Team'); await host.click('#addteam');
-await host.waitForSelector('#addedinfo');
-const lateUrl = await host.getAttribute('#addedinfo a', 'href');
-assert.match(lateUrl, /t=/, 'late team rejoin link');
-await host.waitForSelector('text=' + PRE + 'Late Team');
-const lateP = await open(lateUrl.replace(base, ''));
-await lateP.waitForSelector('text=Waiting for the instructor');
-await lateP.close();
-await host.click('#dist');
-await host.waitForTimeout(300);
-await host.selectOption('#fill', '3'); await host.click('#fillbtn');
-await host.waitForTimeout(500);
+await host.waitForSelector('text=' + names[2]);
+assert.ok(!(await host.$('#dist')) && !(await host.$('#fillbtn')), 'the host has no region or bot setup, only Start');
 await snap(host, 'host-1-lobby');
+await proj.reload(); await proj.waitForSelector('.lobbyslide'); await proj.waitForTimeout(500);
+assert.ok((await proj.textContent('.lobbyslide')).includes(names[1]), 'projector lobby lists the joined teams');
+assert.ok(/[A-Z0-9]{4,5}/.test(await proj.textContent('.lobbyslide .serif')), 'projector lobby shows the class code');
+await snap(proj, 'projector-0-lobby');
 await host.click('#startgame');
-await host.waitForSelector('#openround');
+await host.waitForSelector('#skip:has-text("resolve")', { timeout: 15000 });   // round 1 opened by itself
 await snap(proj, 'projector-0-ready');
-await snap(teams[0], 'team-waiting-for-open');
-
-// event override: set a Mountain West event for round 1 and look for it on the projector
-const evSel = host.locator('select[aria-label="Event mountain"]');
-await evSel.selectOption({ index: 1 });
-const evTitle = (await evSel.locator('option:checked').textContent()).trim();
-await host.waitForTimeout(500);
+await snap(teams[0], 'team-round1-open');
+{ await host.waitForFunction(() => window.__host?.V?.state, null, { timeout: 15000 });   // works on both transports: read the host's own copy of the state
+  const pub = await host.evaluate(() => { const c = {}; const st = __host.V?.state; if (!st) return null; for (const t of Object.values(st.teams)) c[t.region] = (c[t.region] || 0) + 1; return c; });
+  assert.ok(pub && Object.keys(pub).length === 4 && Object.values(pub).every(n => n >= 3 && n <= 4), 'every region has 3 or 4 firms: ' + JSON.stringify(pub)); }
+let evTitle = null;
 
 for (let r = 1; r <= 5; r++) {
   if (r === 3) {   // rejoin after closing a tab: same name, saved token
     await teams[2].close();
-    const rp = await open('index.html?' + Q + '&code=' + code + '&name=' + encodeURIComponent(names[2]));
-    await rp.click('#join'); await rp.waitForURL(/team\.html/);
-    teams[2] = rp; log('rejoined ' + names[2]);
+    teams[2] = await joinOn(names[2]); log('rejoined ' + names[2]);
   }
-  await host.selectOption('#dur', '60');
-  await host.click('#openround');
-  await host.waitForSelector('#resolve');
+  if (r >= 2 && r !== 5 && await host.$('#skip:has-text("open now")')) await host.click('#skip');   // round 5 is left to open by itself after the break
+  await host.waitForSelector('#skip:has-text("resolve")', { timeout: 20000 }).catch(async e => { console.log('DBG', await host.evaluate(() => JSON.stringify({ st: __host.V?.session, nextAt: __host.V?.public?.nextAt, now: Date.now(), paused: __host.paused, busy: __host.busy }))); throw e; });
   await proj.waitForTimeout(800);
+  if (r === 2) assert.ok(await projFind(proj, evTitle, 12), 'projector shows overridden event: ' + evTitle);
   await snap(proj, `projector-r${r}-open`);
   if (r === 1) {
-    assert.ok(await projFind(proj, evTitle), 'projector shows overridden event: ' + evTitle);
     // pause and extend
     const clock = async () => (await host.textContent('#hostclock')).trim();
     await host.click('button:has-text("Extend +1 min")'); await host.waitForTimeout(700);
-    const t1 = await clock(); assert.match(t1, /^1:\d\d$/, 'extended clock ' + t1);
-    await host.click('button:has-text("Pause")'); await host.waitForSelector('button:has-text("Resume")');
+    const t1 = await clock(); assert.match(t1, /^[1-3]:\d\d$/, 'extended clock ' + t1);
+    await host.click('#pausebtn'); await host.waitForSelector('#resumebtn');
     const p1 = await clock(); await host.waitForTimeout(1500); await host.waitForTimeout(600);
     const p2 = await clock(); assert.equal(p1, p2, 'timer holds while paused');
     await snap(host, 'host-r1-paused');
-    await host.click('button:has-text("Resume")'); await host.waitForSelector('button:has-text("Pause")');
+    await host.click('#resumebtn'); await host.waitForSelector('#pausebtn');
   }
   for (const [i, p] of teams.entries()) {
     if (r === 2 && i === 1) continue;   // second team misses round 2: defaults
@@ -220,12 +214,18 @@ for (let r = 1; r <= 5; r++) {
   }
   await host.waitForTimeout(600);
   if (r <= 2) await snap(host, `host-r${r}-submitted`);
-  await host.click('#resolve');
-  if (r < 5) await host.waitForSelector('#openround', { timeout: 20000 });
-  else await proj.waitForSelector('.champ', { timeout: 20000 });
+  if (r === 2) await host.click('#skip');   // one team never submitted: the emergency Skip resolves now
+  // otherwise the round resolves by itself because every human is in
+  if (r < 5) await host.waitForSelector('#skip:has-text("open now")', { timeout: 25000 });
+  else await proj.waitForSelector('.lobbyslide, .slidebox', { timeout: 25000 }).then(async () => { for (let k = 0; k < 40 && !(await proj.$('.champbig')) ; k++) { await proj.keyboard.press('ArrowRight'); await proj.waitForTimeout(150); } });
+  if (r === 1) {   // event override during the break, then look for it on the projector
+    const evSel = host.locator('select[aria-label="Event mountain"]');
+    await evSel.selectOption({ index: 1 });
+    evTitle = (await evSel.locator('option:checked').textContent()).trim();
+  }
   await proj.waitForTimeout(2200);
   if (r === 1) assert.ok(await projFind(proj, PRE + 'Renamed Alder'), 'projector shows the display name');
-  if (r === 4) { assert.ok(await projFind(proj, 'Strike map'), 'projector shows the strike map after round 4'); await snap(proj, 'projector-r4-strike-map'); }
+  if (r === 4) { assert.ok(await projFind(proj, 'Strike vote'), 'projector shows the strike map after round 4'); await snap(proj, 'projector-r4-strike-map'); }
   await snap(proj, `projector-r${r}-results`);
   await teams[0].waitForSelector('.reveal', { timeout: 10000 });
   await teams[0].waitForTimeout(1600);
@@ -241,8 +241,8 @@ for (let r = 1; r <= 5; r++) {
 await teams[0].waitForSelector('#finalclose');
 await snap(teams[0], 'team1-final');
 await teams[0].click('#finalclose');
+assert.ok(await projFind(proj, 'Class champion', 14), 'projector shows the class champion');
 await snap(proj, 'projector-champion');
-await proj.click('.champ .btn');
 assert.ok(await projFind(proj, 'Who changed and survived'), 'projector shows the survivors grid');
 await snap(proj, 'projector-survivors');
 await snap(host, 'host-final-standings');

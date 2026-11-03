@@ -190,8 +190,14 @@ async function auditProjector(label) {
   }
   if (await proj.$('.champ')) { await audit(proj, `projector ${label} champion`, false); await proj.click('.champ .btn'); await proj.waitForTimeout(300); }
 }
+await host.evaluate(async () => { const g = window.__g; await g.net.hostPublish(g.code, g.hostToken, 'open', g.P.buildPublic({ status: 'open', round: 1, state: g.state, timer: { endsAt: Date.now() + 240000, paused: false, remainingMs: 240000, durationMs: 300000 }, submitted: { b1: true, b2: true } })); });
+await auditProjector('round 1 open');
+await host.evaluate(async () => { const g = window.__g; await g.net.hostPublish(g.code, g.hostToken, 'locked', g.P.buildPublic({ status: 'locked', round: 1, state: g.state })); });
 await auditProjector('round 1');
-await advance(2); await auditProjector('after round 2');
+await advance(2); await auditProjector('after round 2 (reform)');
+await host.evaluate(async () => { const g = window.__g; await g.net.hostPublish(g.code, g.hostToken, 'open', g.P.buildPublic({ status: 'open', round: 3, state: g.state, timer: { endsAt: Date.now() + 200000, paused: false, remainingMs: 200000, durationMs: 300000 }, news: g.P.roundNews(g.state, g.state) })); });
+await auditProjector('round 3 open');
+await host.evaluate(async () => { const g = window.__g; await g.net.hostPublish(g.code, g.hostToken, 'locked', g.P.buildPublic({ status: 'locked', round: 3, state: g.state })); });
 await advance(2); await auditProjector('after round 4 (strike map)');
 await advance(1); await auditProjector('final');
 
