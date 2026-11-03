@@ -1,0 +1,129 @@
+{
+ "profile:adaptive": {
+  "mean": 63.2150114942529,
+  "sd": 5.88,
+  "n": 435
+ },
+ "arch:integrated": {
+  "mean": 61.3765742574257,
+  "sd": 7.31,
+  "n": 1010
+ },
+ "region:lakes": {
+  "mean": 61.05168207024028,
+  "sd": 6.65,
+  "n": 541
+ },
+ "win:profile:adaptive": {
+  "mean": 0.2689655172413793,
+  "sd": 0.44,
+  "n": 435
+ },
+ "win:arch:integrated": {
+  "mean": 0.2603960396039604,
+  "sd": 0.44,
+  "n": 1010
+ },
+ "capped": {
+  "mean": 0.04873563218390804,
+  "sd": 0.22,
+  "n": 2175
+ },
+ "profile:prospector": {
+  "mean": 62.427172413793095,
+  "sd": 4.88,
+  "n": 435
+ },
+ "arch:excellence": {
+  "mean": 60.937983050847464,
+  "sd": 6.46,
+  "n": 590
+ },
+ "region:mountain": {
+  "mean": 60.24472222222219,
+  "sd": 7.47,
+  "n": 540
+ },
+ "win:profile:prospector": {
+  "mean": 0.39080459770114945,
+  "sd": 0.49,
+  "n": 435
+ },
+ "win:arch:excellence": {
+  "mean": 0.33728813559322035,
+  "sd": 0.47,
+  "n": 590
+ },
+ "profile:defender": {
+  "mean": 64.7026436781609,
+  "sd": 2.97,
+  "n": 435
+ },
+ "arch:access": {
+  "mean": 62.6119478260869,
+  "sd": 6.16,
+  "n": 575
+ },
+ "region:metro": {
+  "mean": 63.33557553956834,
+  "sd": 5.63,
+  "n": 556
+ },
+ "win:profile:defender": {
+  "mean": 0.2988505747126437,
+  "sd": 0.46,
+  "n": 435
+ },
+ "win:arch:access": {
+  "mean": 0.24,
+  "sd": 0.43,
+  "n": 575
+ },
+ "profile:reactor": {
+  "mean": 54.80572413793102,
+  "sd": 8.69,
+  "n": 435
+ },
+ "win:profile:reactor": {
+  "mean": 0.10344827586206896,
+  "sd": 0.3,
+  "n": 435
+ },
+ "region:sunbelt": {
+  "mean": 61.654144981412706,
+  "sd": 7.06,
+  "n": 538
+ },
+ "profile:analyzer": {
+  "mean": 62.77041379310346,
+  "sd": 5.46,
+  "n": 435
+ },
+ "win:profile:analyzer": {
+  "mean": 0.31724137931034485,
+  "sd": 0.47,
+  "n": 435
+ },
+ "classwin:region:mountain": {
+  "mean": 0.26666666666666666,
+  "sd": 0.44,
+  "n": 150
+ },
+ "classwin:region:metro": {
+  "mean": 0.20666666666666667,
+  "sd": 0.4,
+  "n": 150
+ },
+ "classwin:region:sunbelt": {
+  "mean": 0.2866666666666667,
+  "sd": 0.45,
+  "n": 150
+ },
+ "classwin:region:lakes": {
+  "mean": 0.24,
+  "sd": 0.43,
+  "n": 150
+ },
+ "invariantViolations": [],
+ "invariantCount": 0
+}

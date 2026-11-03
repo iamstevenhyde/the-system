@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="src/style.css"></head>
+<body><div id="app" style="position:fixed;inset:0"></div>
+<script type="module">
+import { h, regionScene, logo } from './src/ui.js';
+import { makeNet, withLocal } from './src/transport.js';
+const net = makeNet(), q = new URLSearchParams(location.search), root = document.getElementById('app');
+const code = h('input', { class: 'code', maxlength: 5, placeholder: 'GAME CODE', value: (q.get('code') || '').toUpperCase(), 'aria-label': 'Game code', autocomplete: 'off' });
+const name = h('input', { placeholder: 'Team name', maxlength: 40, value: q.get('name') || '', 'aria-label': 'Team name', autocomplete: 'off' });
+const err = h('div', { class: 'err', role: 'alert' });
+const tokKey = (c, n) => 'sys:tok:' + c + ':' + n.trim().toLowerCase();
+async function go() {
+  err.textContent = '';
+  const c = code.value.trim().toUpperCase(), n = name.value.trim();
+  try {
+    let saved = null; try { saved = localStorage.getItem(tokKey(c, n)); } catch { /* */ }
+    const r = await net.join(c, n, saved);
+    try { localStorage.setItem(tokKey(c, n), r.teamToken); } catch { /* */ }
+    location.href = withLocal(`team.html?code=${r.code}&t=${encodeURIComponent(r.teamToken)}`);
+  } catch (e) { err.textContent = e.message; }
+}
+[code, name].forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') go(); }));
+const bg = regionScene('mountain'); bg.style.cssText = 'position:absolute;inset:0;filter:brightness(.8)';
+root.append(h('div', { class: 'center', style: { position: 'absolute', inset: 0 } }, bg,
+  h('div', { class: 'glass joinbox' }, logo(380), code, name,
+    h('button', { class: 'btn gold big', id: 'join', onclick: go, style: { justifyContent: 'center' } }, 'Start Game'), err,
+    h('div', { class: 'row', style: { justifyContent: 'center', gap: '24px' } },
+      h('a', { class: 'btn', href: withLocal('host.html'), style: { minHeight: '34px', fontSize: '14px' } }, 'Instructor'),
+      h('a', { class: 'btn', href: withLocal('solo.html'), style: { minHeight: '34px', fontSize: '14px' } }, 'Play solo')))));
+</script></body></html>

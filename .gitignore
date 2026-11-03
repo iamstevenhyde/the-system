@@ -1,0 +1,5 @@
+tools/shots/
+node_modules/
+*.log
+*.bundle
+tools/round3-results/

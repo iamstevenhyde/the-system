@@ -1,0 +1,217 @@
+{
+  "bounds": {
+    "pass": true,
+    "checked": 867
+  },
+  "gates": {
+    "G1": true,
+    "G2": true,
+    "G3": true,
+    "G4": true,
+    "G5": true,
+    "G6": true,
+    "G7": true,
+    "G8": true,
+    "G9": true,
+    "G10": true
+  },
+  "arch": {
+    "integrated": 0.2584808259587021,
+    "excellence": 0.33787289234760054,
+    "access": 0.245136186770428
+  },
+  "wins": {
+    "adaptive": 0.25021570319240727,
+    "prospector": 0.3793103448275862,
+    "defender": 0.30457290767903367,
+    "reactor": 0.11044003451251079,
+    "analyzer": 0.3356341673856773
+  },
+  "regions": {
+    "mountain": 0.29,
+    "metro": 0.195,
+    "sunbelt": 0.2675,
+    "lakes": 0.2475
+  },
+  "means": {
+    "adaptive": 63.290000000000035,
+    "prospector": 62.3388017241379,
+    "defender": 64.745823986195,
+    "reactor": 55.19010353753237,
+    "analyzer": 63.072993960310555
+  },
+  "capped": 0.044340924775707384,
+  "invariantCount": 0,
+  "spread": 9.555720448662633,
+  "strategic": {
+    "preReformChronicAdvantage": -7.0862500000000015,
+    "postReformChronicAdvantage": -4.828333333333334,
+    "mandate": {
+      "finished": 3,
+      "minTrust": 39.8276231936
+    },
+    "consult": {
+      "finished": 4,
+      "minTrust": 50.47191177218038
+    },
+    "pass": true
+  },
+  "jcurve": {
+    "regions": {
+      "lakes": {
+        "pairs": 100,
+        "rounds": [
+          {
+            "round": 1,
+            "operatingDelta": 0,
+            "outcomeDelta": 0
+          },
+          {
+            "round": 2,
+            "operatingDelta": -1.8160000000000007,
+            "outcomeDelta": -6.234300000000002
+          },
+          {
+            "round": 3,
+            "operatingDelta": -5.665899999999991,
+            "outcomeDelta": -9.485500000000004
+          },
+          {
+            "round": 4,
+            "operatingDelta": -7.873600000000003,
+            "outcomeDelta": -7.466899999999994
+          },
+          {
+            "round": 5,
+            "operatingDelta": 0.07120000000000036,
+            "outcomeDelta": 2.370299999999997
+          }
+        ],
+        "pass": true
+      },
+      "metro": {
+        "pairs": 100,
+        "rounds": [
+          {
+            "round": 1,
+            "operatingDelta": 0,
+            "outcomeDelta": 0
+          },
+          {
+            "round": 2,
+            "operatingDelta": -1.079199999999996,
+            "outcomeDelta": -5.5691999999999995
+          },
+          {
+            "round": 3,
+            "operatingDelta": -6.005400000000001,
+            "outcomeDelta": -9.8846
+          },
+          {
+            "round": 4,
+            "operatingDelta": -6.039899999999999,
+            "outcomeDelta": -6.672199999999995
+          },
+          {
+            "round": 5,
+            "operatingDelta": 1.0812999999999997,
+            "outcomeDelta": 2.0360000000000036
+          }
+        ],
+        "pass": true
+      }
+    },
+    "pass": true
+  },
+  "approaches": {
+    "approaches": {
+      "consult": {
+        "regions": {
+          "mountain": {
+            "pairs": 100,
+            "trustWinRate": 0.5,
+            "totalWinRate": 0.49,
+            "bothWinRate": 0.32,
+            "mandateFasterRate": 1,
+            "meanTotalDelta": 0.09340000000000068,
+            "unfinished": 0
+          },
+          "metro": {
+            "pairs": 100,
+            "trustWinRate": 1,
+            "totalWinRate": 1,
+            "bothWinRate": 1,
+            "mandateFasterRate": 1,
+            "meanTotalDelta": 0.7545999999999998,
+            "unfinished": 0
+          },
+          "sunbelt": {
+            "pairs": 100,
+            "trustWinRate": 0.75,
+            "totalWinRate": 0.66,
+            "bothWinRate": 0.54,
+            "mandateFasterRate": 1,
+            "meanTotalDelta": 0.3766,
+            "unfinished": 0
+          },
+          "lakes": {
+            "pairs": 100,
+            "trustWinRate": 0.75,
+            "totalWinRate": 1,
+            "bothWinRate": 0.75,
+            "mandateFasterRate": 1,
+            "meanTotalDelta": 3.641000000000001,
+            "unfinished": 0
+          }
+        },
+        "bothWinRate": 0.6525000000000001,
+        "mandateFasterRate": 1,
+        "pass": true
+      },
+      "joint": {
+        "regions": {
+          "mountain": {
+            "pairs": 100,
+            "trustWinRate": 0.5,
+            "totalWinRate": 0.49,
+            "bothWinRate": 0.3,
+            "mandateFasterRate": 1,
+            "meanTotalDelta": 0.06840000000000089,
+            "unfinished": 0
+          },
+          "metro": {
+            "pairs": 100,
+            "trustWinRate": 1,
+            "totalWinRate": 0.99,
+            "bothWinRate": 0.99,
+            "mandateFasterRate": 1,
+            "meanTotalDelta": 0.6905000000000001,
+            "unfinished": 0
+          },
+          "sunbelt": {
+            "pairs": 100,
+            "trustWinRate": 0.75,
+            "totalWinRate": 0.71,
+            "bothWinRate": 0.55,
+            "mandateFasterRate": 1,
+            "meanTotalDelta": 0.5337,
+            "unfinished": 0
+          },
+          "lakes": {
+            "pairs": 100,
+            "trustWinRate": 0.75,
+            "totalWinRate": 0.53,
+            "bothWinRate": 0.41,
+            "mandateFasterRate": 1,
+            "meanTotalDelta": 0.3511000000000002,
+            "unfinished": 0
+          }
+        },
+        "bothWinRate": 0.5625,
+        "mandateFasterRate": 1,
+        "pass": true
+      }
+    },
+    "pass": true
+  }
+}
