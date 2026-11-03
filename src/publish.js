@@ -2,6 +2,8 @@
 // at every publish and commit; the transport only stores them.
 import { REGIONS, ARCHETYPES, ROUNDS } from '../engine/data.js';
 import { EVENTS } from '../engine/cards.js';
+import { revealFor, roundNews } from '../engine/deck.js';
+export { roundNews };
 
 const clone = o => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
 const onehot = i => [0, 1, 2].map(j => (j === i ? 1 : 0));
@@ -34,21 +36,27 @@ export function eventInfo(state, region) {
 }
 
 // roster: [{id,name,region,bot}] used before the game exists. submitted: {teamId:true}.
-export function buildPublic({ status, round, state, roster = [], timer = null, submitted = {}, rankings = null }) {
+export function buildPublic({ status, round, state, roster = [], timer = null, submitted = {}, rankings = null, news = null }) {
   const teams = state
     ? Object.values(state.teams).map(t => ({
-      id: t.id, name: t.name, region: t.region, bot: !!t.bot, submitted: !!submitted[t.id], archetype: t.archetype,
+      id: t.id, name: t.name, region: t.region, bot: !!t.bot, submitted: !!submitted[t.id], archetype: t.archetype, emblem: t.emblem ?? null,
       hist: t.history.map(h => ({ round: h.round, share: h.marketShare, outcome: h.outcome, revenue: h.revenue })),
     }))
     : roster.map(t => ({ id: t.id, name: t.name, region: t.region || null, bot: !!t.bot, profile: t.bot || null, submitted: false, archetype: null, hist: [] }));
   const events = {};
   if (state && status !== 'done') for (const r of Object.keys(REGIONS)) events[r] = eventInfo(state, r);
-  return { status, round, rounds: ROUNDS, timer, teams, events, reform: !!state && round >= 3, final: status === 'done' && rankings ? { rankings } : null };
+  const sum = a => a.reduce((x, y) => x + y, 0);
+  const survivors = status === 'done' && state ? Object.values(state.teams).map(t => ({ id: t.id, name: t.name, emblem: t.emblem ?? null, region: t.region, bot: !!t.bot,
+    changes: sum(t.history.map(h => h.changes || 0)), finished: sum(t.history.map(h => (h.completed || []).length)), struck: !!t.history[3]?.strike?.struck, meter: t.history[3]?.strike?.meter ?? null })) : null;
+  return { status, round, rounds: ROUNDS, timer, teams, events, news, reform: !!state && round >= 3, final: status === 'done' && rankings ? { rankings, survivors } : null };
 }
 
 // One private view per human team: its scoped state and the region events it may see.
-export function buildViews(state, humanIds) {
+export function buildViews(state, humanIds, prev = null) {
   const views = {};
-  for (const id of humanIds) if (state.teams[id]) views[id] = { state: scopeState(state, id), events: Object.fromEntries(Object.keys(REGIONS).map(r => [r, eventInfo(state, r)])) };
+  for (const id of humanIds) if (state.teams[id]) {
+    views[id] = { state: scopeState(state, id), events: Object.fromEntries(Object.keys(REGIONS).map(r => [r, eventInfo(state, r)])) };
+    if (prev && prev.teams[id]) views[id].reveal = { round: state.teams[id].history.length, ...revealFor(prev, state, id) };
+  }
   return views;
 }

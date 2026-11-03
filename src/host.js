@@ -3,14 +3,15 @@
 import * as D from '../engine/data.js';
 import { EVENTS } from '../engine/cards.js';
 import { createGame, assignRegions, resolveRound, rankings } from '../engine/engine.js';
-import { botDecision, PROFILES, BOT_NAMES } from '../engine/bots.js';
+import { PROFILES, BOT_NAMES } from '../engine/bots.js';
+import { botPicks, picksToDecision } from '../engine/deck.js';
 import { h, icon, money, timerMs, mmss, ROUND_TITLES, logo, hexEmblem } from './ui.js';
 import { makeNet, withLocal } from './transport.js';
-import { buildPublic, buildViews } from './publish.js';
+import { buildPublic, buildViews, roundNews } from './publish.js';
 
 const net = makeNet(), root = document.getElementById('app');
 const q = new URLSearchParams(location.search);
-let addedInfo = null, lastJson = '', token = null, code = null, V = null, busy = false, selTeam = null, started = false;
+let lastPrev = null, addedInfo = null, lastJson = '', token = null, code = null, V = null, busy = false, selTeam = null, started = false;
 const opt = { autoTimer: true, autoAll: false, dur: 300, fill: 4, seed: 1 };
 const save = () => { try { localStorage.setItem('sys:host:last', JSON.stringify({ code, token })); } catch { /* */ } };
 const status = () => V.session.status, round = () => V.session.round;
@@ -57,7 +58,7 @@ const roster = () => [
 ];
 const submittedMap = () => Object.fromEntries(Object.keys(V.decisions || {}).map(k => [k, true]));
 function pub(st, over = {}) {
-  return buildPublic({ status: st, round: round(), state: V.state, roster: V.state ? [] : roster(), timer: V.public?.timer || null, submitted: submittedMap(), rankings: V.public?.final?.rankings || null, ...over });
+  return buildPublic({ status: st, round: round(), state: V.state, roster: V.state ? [] : roster(), timer: V.public?.timer || null, submitted: submittedMap(), rankings: V.public?.final?.rankings || null, news: V.public?.news || null, ...over });
 }
 async function syncSubmitted() {
   if (!V || status() !== 'open' || !V.state) return;
@@ -106,16 +107,17 @@ async function resolve() {
   try {
     await net.hostPublish(code, token, 'locked', pub('locked'));   // closes submissions
     const g = await net.hostGet(code, token), s = g.state, r = g.session.round, decisions = {};
-    for (const [id, t] of Object.entries(s.teams)) decisions[id] = t.bot ? botDecision(s, id, t.bot, s.seed) : g.decisions[id];
+    for (const [id, t] of Object.entries(s.teams)) decisions[id] = t.bot ? picksToDecision(s, id, botPicks(s, id, t.bot, s.seed)) : g.decisions[id];
     const ns = resolveRound(s, decisions), done = ns.phase === 'done';
     const rk = done ? rankings(ns) : null;
-    await net.commitRound(code, token, r, ns, buildPublic({ status: done ? 'done' : 'locked', round: ns.round, state: ns, rankings: rk }), buildViews(ns, g.teams.map(t => t.id)), done);
+    lastPrev = s;
+    await net.commitRound(code, token, r, ns, buildPublic({ status: done ? 'done' : 'locked', round: ns.round, state: ns, rankings: rk, news: roundNews(s, ns) }), buildViews(ns, g.teams.map(t => t.id), s), done);
   } finally { busy = false; await load(); }
 }
 async function overrideEvent(rid, id) {
   const ns = JSON.parse(JSON.stringify(V.state));
   if (id) ns.regions[rid].events[round()] = id; else delete ns.regions[rid].events[round()];
-  await net.hostPublish(code, token, 'locked', pub('locked', { state: ns }), ns, buildViews(ns, humans().map(t => t.id)));
+  await net.hostPublish(code, token, 'locked', pub('locked', { state: ns, news: V.public?.news || null }), ns, buildViews(ns, humans().map(t => t.id), lastPrev && lastPrev.round === ns.round - 1 ? lastPrev : null));
 }
 async function restart() {
   if (!confirm('Restart the game? Teams stay, bots are removed.')) return;
@@ -209,7 +211,7 @@ function running(side, main) {
   const table = h('table', { class: 't' }, h('tr', {}, ['Team', 'Region', 'Status', 'Cash', 'Share', ''].map(x => h('th', {}, x))));
   for (const [id, t] of Object.entries(s.teams)) {
     const last = t.history.at(-1), got = V.decisions?.[id];
-    table.append(h('tr', {}, h('td', {}, h('span', { class: 'row', style: { gap: '8px', flexWrap: 'nowrap' } }, hexEmblem(t.name, t.region, 26), t.name)), h('td', {}, h('span', { class: 'rtag', style: { background: D.REGIONS[t.region].color } }), D.REGIONS[t.region].name),
+    table.append(h('tr', {}, h('td', {}, h('span', { class: 'row', style: { gap: '8px', flexWrap: 'nowrap' } }, hexEmblem(t.name, t.region, 26, t.emblem), t.name)), h('td', {}, h('span', { class: 'rtag', style: { background: D.REGIONS[t.region].color } }), D.REGIONS[t.region].name),
       h('td', {}, t.bot ? h('span', { class: 'chip' }, t.bot) : done ? '' : got ? h('span', { class: 'chip good' }, 'Submitted') : h('span', { class: 'chip warn' }, 'Not yet')),
       h('td', {}, money(t.cash)), h('td', {}, last ? Math.round(last.marketShare * 100) + '%' : '-'), h('td', {}, h('button', { class: 'btn', style: { minHeight: '28px', padding: '2px 10px' }, onclick: () => { selTeam = id; render(); } }, 'Inspect'))));
   }

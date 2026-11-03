@@ -2,6 +2,7 @@
 // state; no DOM, no network. resolveRound(state, decisions) returns a new state.
 import * as D from './data.js';
 import { EVENTS, PROPOSALS } from './cards.js';
+import * as M from './moves.js';
 
 // ---------- utilities ----------
 export function rng(seed) {
@@ -36,7 +37,7 @@ export function assignRegions(n, seed = 1) {
 }
 
 export function createGame({ seed = 1, teams }) {
-  const state = { version: 1, seed, round: 1, phase: 'decide', regions: {}, teams: {}, log: [] };
+  const state = { version: 1, seed, round: 1, phase: 'decide', regions: {}, teams: {}, log: [], moveLog: {} };
   const rand = rng(hash(seed, 'events'));
   for (const rid of D.REGION_IDS) {
     const pool = [...D.REGIONS[rid].events];
@@ -52,12 +53,12 @@ export function createGame({ seed = 1, teams }) {
   return state;
 }
 
-function newTeam({ id, name, region, archetype = 'access', bot = null }) {
+function newTeam({ id, name, region, archetype = 'access', bot = null, emblem = null }) {
   const a = D.ARCHETYPES[archetype];
   const w = {};
   for (const p of D.POINTS) w[p] = onehot(a.star[p]);
   return {
-    id, name, region, archetype, bot,
+    id, name, region, archetype, bot, ...M.newTeamExtras(emblem),
     target: { ...a.star }, w, transitions: {},
     capacity: { ...a.capacity }, pendingBuild: { primary: 0, specialty: 0, chronic: 0 }, lateBuild: { primary: 0, specialty: 0, chronic: 0 },
     cash: D.START_CASH, trust: { ...a.trust }, influenceBonus: {}, capBonus: {},
@@ -167,11 +168,12 @@ export function validateDecision(state, id, raw) {
     for (const k of Object.keys(ch)) if (!keys.includes(k)) delete ch[k];
   }
   d.changes = ch;
+  M.sanitize(state, id, raw, d, t);
   const inv = {};
   for (const m of D.MARKETS) inv[m] = clamp(Number(d.invest?.[m]) || 0, 0, 30);
   d.explore = clamp(Number(d.explore) || 0, 0, 8);
   // Spending cannot exceed cash plus the credit line.
-  const fixedSpend = changeCost(state, d) + (d.pilot ? D.PILOT_COST : 0) + proposalCost(t, d.response);
+  const fixedSpend = changeCost(state, d, id) + (d.pilot ? D.PILOT_COST : 0) + proposalCost(t, d.response) + M.movesCost(d);
   const room = Math.max(0, t.cash + D.CREDIT_LINE - fixedSpend);
   const want = sum(Object.values(inv)) + d.explore;
   const scale = want > room ? room / want : 1;
@@ -181,10 +183,10 @@ export function validateDecision(state, id, raw) {
   return d;
 }
 
-export function changeCost(state, d) {
+export function changeCost(state, d, id) {
   if (state.round === 1) return 0;
   const n = Object.keys(d.changes || {}).length;
-  return n ? n * D.CHANGE_COST + D.APPROACHES[d.approach].cost : 0;
+  return n ? (n * D.CHANGE_COST + D.APPROACHES[d.approach].cost) * M.inertia(state, id) : 0;
 }
 function proposalCost(t, response) {
   const card = PROPOSALS.find(p => p.id === t.proposal?.id);
@@ -212,7 +214,7 @@ function pickProposal(state, id) {
   let best = null, bestScore = 0;
   for (const p of PROPOSALS) {
     if (team.usedProposals.includes(p.id)) continue;
-    const s = p.trigger(team, x) + rand() * 0.8;
+    const s = p.trigger(team, x) + rand() * 0.8 + M.forcedBonus(state, p.id);
     if (s > bestScore) { best = p; bestScore = s; }
   }
   if (!best) return null;
@@ -262,6 +264,7 @@ function applyChanges(state, team, d, notes) {
   const inf = influence(team);
   const changed = Object.entries(d.changes);
   if (!changed.length) return;
+  team.lastChange = r;
   if (d.approach === 'mandate') team.mandates += 1;
   const memory = 1 + 0.25 * Math.max(0, team.mandates - 1);   // repeated mandates hurt more
   for (const [p, o] of changed) {
@@ -297,7 +300,7 @@ function advanceTransitions(team, cap) {
     const speed = (ap.speed + learned) * (0.5 + tAff / 100) * capacity / crowd;
     tr.progress = Math.min(1, tr.progress + speed);
     team.w[p] = lerp(tr.from, onehot(tr.to), tr.progress);
-    disruption += D.DISRUPTION_PER_CHANGE * (ap.knowledge ? 0.6 : 1) * (1.4 - tAff / 100) * (1 - tr.progress * 0.5);
+    disruption += D.DISRUPTION_PER_CHANGE * (ap.knowledge ? 0.84 : 1) * (1.4 - tAff / 100) * (1 - tr.progress * 0.5);
     if (tr.progress >= 1) {
       completed.push(p);
       // Completed routines build implementation competence, regardless of approach.
@@ -313,11 +316,12 @@ function advanceTransitions(team, cap) {
 function trImplementationCost(team) { return team.disruption * 0.10; }
 
 // ---------- market ----------
-function attractiveness(team, regionId, market, cap, d, quality) {
+function attractiveness(team, regionId, market, cap, d, round) {
   const reg = D.REGIONS[regionId];
   let a = 0;
   for (const k of D.CAPS) a += (D.MARKET_WEIGHTS[market][k] + (reg.weightShift[k] || 0)) * cap[k] / 100;
-  a += D.FOCUS_ATTRACT * d.focus[market] / 100;
+  a += D.FOCUS_ATTRACT * d.focus[market] / 100 * M.fitScale(d, market);
+  a += M.attractBonus(team, market, round);
   a += D.PRICE[d.price].attract * (market === 'specialty' ? 0.5 : 1);
   a += D.LOYALTY * team.share[market];
   a += (team.reputation[market] - 55) / 100;
@@ -362,9 +366,10 @@ export function resolveRound(prev, rawDecisions) {
   const ctx = {};
 
   // 1. decisions, proposals, changes, transitions, builds
+  const vd = M.prePass(state, rawDecisions, validateDecision, capabilities);
   for (const id of Object.keys(state.teams)) {
     const team = state.teams[id];
-    const d = validateDecision(state, id, rawDecisions?.[id]);
+    const d = vd[id];
     const notes = [];
     const region = state.regions[team.region];
     const evId = region.events[r];
@@ -378,8 +383,10 @@ export function resolveRound(prev, rawDecisions) {
       if (d.response === 'accept' && !team.proposal.genuine) fx = mergeFx(fx, applyEffects(team, card.acceptIfFake, notes));
       team.usedProposals.push(card.id);
     }
-    const chCost = changeCost(state, d);
+    const chCost = changeCost(state, d, id);
     applyChanges(state, team, d, notes);
+    const opt = M.applyOptions(team, d, state, notes, applyEffects);
+    for (const o of opt.results) fx = mergeFx(fx, o);
     const pre = capabilities(team, team.region, { disruption: 0 });
     const tr = advanceTransitions(team, pre);
     const fatigue = team.history.slice(-2).reduce((s, h) => s + h.changes, 0) * 0.9;
@@ -390,6 +397,8 @@ export function resolveRound(prev, rawDecisions) {
       if (wt < ev.strike + 15) { team.disruption += 8; notes.push('Strike: units ran short.'); fx.capMult = { ...fx.capMult, primary: (fx.capMult.primary || 1) * 0.9, chronic: (fx.capMult.chronic || 1) * 0.9 }; }
       else notes.push('Staff voted no strike.');
     }
+
+    const sk = M.strikeCheck(state, team, opt, notes, fx);
 
     // exploration
     let explored = 0;
@@ -410,7 +419,7 @@ export function resolveRound(prev, rawDecisions) {
     for (const m of D.MARKETS) {
       team.capacity[m] += team.pendingBuild[m] + team.lateBuild[m];
       team.lateBuild[m] = 0;
-      const built = d.invest[m] * D.BUILD_K_PER_M[m] * staffing;
+      const built = d.invest[m] * D.BUILD_K_PER_M[m] * staffing * M.fitScale(d, m);
       const delay = ev?.buildDelay || 0;
       team.pendingBuild[m] = built * (1 - delay);
       team.lateBuild[m] = built * delay;
@@ -428,7 +437,7 @@ export function resolveRound(prev, rawDecisions) {
       if (m === 'chronic' && team.pilot) c *= 1 + (team.pilot.success ? D.PILOT_CHRONIC_CAP : D.PILOT_CHRONIC_CAP / 3);
       effCap[m] = c;
     }
-    ctx[id] = { d, notes, ev, fx, cap, effCap, chCost, completed: tr.completed, explored };
+    ctx[id] = { d, notes, ev, fx, cap, effCap, chCost, completed: tr.completed, explored, sk };
     team.lastDecision = { focus: d.focus, price: d.price };
   }
 
@@ -444,7 +453,7 @@ export function resolveRound(prev, rawDecisions) {
     const ro = { event: evId, demand: {}, outside: {}, served: {} };
     for (const m of D.MARKETS) {
       const demand = D.DEMAND_PER_TEAM[m] * ids.length * reg.demand[m] * region.growth * (ev?.demand?.[m] || 1);
-      const utils = ids.map(id => attractiveness(state.teams[id], rid, m, ctx[id].cap, ctx[id].d));
+      const utils = ids.map(id => attractiveness(state.teams[id], rid, m, ctx[id].cap, ctx[id].d, r));
       const caps = ids.map(id => ctx[id].effCap[m]);
       const { served, outside } = allocate(demand, utils, caps, D.OUTSIDE_ATTRACT[m]);
       ro.demand[m] = r2(demand); ro.outside[m] = r2(outside);
@@ -517,17 +526,19 @@ export function resolveRound(prev, rawDecisions) {
       disruption: r2(team.disruption), changes: Object.keys(d.changes).length * (r === 1 ? 0 : 1), approach: d.approach,
       completed: ctx[id].completed, transitions: Object.fromEntries(Object.entries(team.transitions).map(([p, t]) => [p, r2(t.progress)])),
       proposal: team.proposal ? { id: team.proposal.id, response: d.response, genuine: team.proposal.genuine } : null,
-      event: ev ? state.regions[team.region].events[r] : null, missing: d.missing, notes, decision: d,
+      event: ev ? state.regions[team.region].events[r] : null, missing: d.missing, notes, decision: d, ...M.histExtras(state, id, ctx[id].sk),
     };
     team.history.push(hist);
     out.teams[id] = hist;
   }
 
+  M.scoreForecasts(state);
   state.log.push({ round: r, regions: out.regions });
   if (r >= D.ROUNDS) { state.phase = 'done'; state.round = r + 1; }
   else {
     state.round = r + 1;
     for (const id of Object.keys(state.teams)) state.teams[id].proposal = pickProposal(state, id);
+    M.plan(state);
   }
   state.version += 1;
   return state;

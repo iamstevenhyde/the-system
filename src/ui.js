@@ -216,9 +216,12 @@ const EMB_SYM = [
   '<circle cx="20" cy="21" r="5" fill="#fff6dc"/><path d="M20 11v3 M20 28v3 M10 21h3 M27 21h3 M13 14l2 2 M27 14l-2 2" stroke="#fff6dc" stroke-width="2.400" stroke-linecap="round"/>',
   '<path d="M12 31V18h6v13z M21 31V12h7v19z M10 31h20" fill="#fff6dc" stroke="#fff6dc" stroke-width="1.500"/>',
 ];
-export function hexEmblem(name, region, size = 40) {
+export const EMBLEM_COUNT = EMB_SYM.length;
+export function hexEmblem(name, region, size = 40, variant = null) {
   let x = 7; for (const c of String(name)) x = (x * 31 + c.charCodeAt(0)) >>> 0;
-  const col = EMB_COL[x % EMB_COL.length], sym = EMB_SYM[(x >>> 3) % EMB_SYM.length];
+  const vi = typeof variant === 'string' && /^e\d$/.test(variant) ? Number(variant[1]) : variant;
+  const v = Number.isInteger(vi) && vi >= 0 && vi < EMB_SYM.length ? vi : null;
+  const col = v != null ? EMB_COL[v] : EMB_COL[x % EMB_COL.length], sym = v != null ? EMB_SYM[v] : EMB_SYM[(x >>> 3) % EMB_SYM.length];
   const d = h('span', { class: 'hex', role: 'img', 'aria-label': name + ' emblem', style: { width: size + 'px', height: size * 1.12 + 'px', display: 'inline-block', flex: 'none' } });
   d.innerHTML = `<svg viewBox="0 0 40 45" width="100%" height="100%" aria-hidden="true"><path d="M20 1.500 38 11v23L20 43.500 2 34V11z" fill="${col}" stroke="#CF9A49" stroke-width="2.500"/>${sym}</svg>`;
   return d;

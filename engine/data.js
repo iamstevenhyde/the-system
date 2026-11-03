@@ -51,10 +51,10 @@ export const MARKET_WEIGHTS = {
 export const QUALITY_WEIGHTS = {
   primary:   C(0.45, 0.20, 0.10, 0.15, 0.10, 0.00),
   specialty: C(0.05, 0.65, 0.15, 0.10, 0.00, 0.05),
-  chronic:   C(0.05, 0.20, 0.55, 0.10, 0.00, 0.10),
+  chronic:   C(0.05, 0.20, 0.5, 0.10, 0.00, 0.10),
 };
 
-export const RATES = { primary: 0.265, specialty: 2.20, chronic: 0.52 };           // $M per k patients
+export const RATES = { primary: 0.325, specialty: 2.20, chronic: 0.52 };           // $M per k patients
 export const VAR_COST = { primary: 0.56, specialty: 0.322, chronic: 0.55 };       // share of base rate
 export const FIXED_PER_K = { primary: 0.045, specialty: 0.22, chronic: 0.12 };   // $M per k capacity per round
 export const BUILD_K_PER_M = { primary: 7.0, specialty: 1.0, chronic: 2.6 };     // k capacity per $M invested
@@ -84,7 +84,7 @@ export const REGIONS = {
     name: 'Metro Corridor', tag: 'The Talent Problem', color: '#5a5f8f',
     demand: { primary: 0.95, specialty: 1.40, chronic: 0.90 },
     weightShift: C(0, 0.08, 0, 0, 0, -0.04),
-    labor: 1.02, fixed: 0.80, growth: 0.00,
+    labor: 1.03, fixed: 0.80, growth: 0.00,
     staffing: 0.95,
     reform: { primary: 0.94, specialty: 0.84, chronic: 1.40 },
     events: ['specialist_raid', 'insurer_merger', 'autonomy_dispute'],
@@ -93,7 +93,7 @@ export const REGIONS = {
     name: 'Sunbelt Growth', tag: 'The Scaling Problem', color: '#b0793f',
     demand: { primary: 0.95, specialty: 0.90, chronic: 0.85 },
     weightShift: C(0, 0, 0, 0, 0.10, 0),
-    labor: 0.98, fixed: 1.20, growth: 0.06,     // demand grows 6% per round
+    labor: 0.98, fixed: 1.12, growth: 0.06,     // demand grows 6% per round
     staffing: 0.90,
     reform: { primary: 0.93, specialty: 0.90, chronic: 1.40 },
     events: ['population_surge', 'construction_delay', 'hiring_crunch'],
@@ -102,7 +102,7 @@ export const REGIONS = {
     name: 'Great Lakes', tag: 'The Legacy Problem', color: '#7a5a6b',
     demand: { primary: 0.95, specialty: 0.95, chronic: 1.15 },
     weightShift: C(0, 0, 0.06, 0, 0, -0.04),
-    labor: 1.02, fixed: 1.16, growth: -0.01,
+    labor: 1.06, fixed: 1.16, growth: -0.01,
     staffing: 1.00,
     reform: { primary: 0.93, specialty: 0.90, chronic: 1.40 },
     events: ['chronic_funding', 'labor_conflict', 'aging_plant'],
@@ -125,12 +125,12 @@ export const ARCHETYPES = {
   },
   excellence: {
     name: 'Center of Excellence', star: { strategy: 1, structure: 1, people: 1, process: 1, rewards: 1 },
-    capacity: { primary: 70, specialty: 21, chronic: 22 },
+    capacity: { primary: 70, specialty: 27, chronic: 22 },
     trust: { physicians: 68, nurses: 60, admins: 50, coordinators: 45 },
   },
   integrated: {
     name: 'Integrated Network', star: { strategy: 2, structure: 2, people: 2, process: 2, rewards: 2 },
-    capacity: { primary: 85, specialty: 12, chronic: 32 },
+    capacity: { primary: 85, specialty: 12, chronic: 22 },
     trust: { physicians: 50, nurses: 60, admins: 50, coordinators: 65 },
   },
 };
@@ -141,8 +141,8 @@ export const DEBT_RATE = 0.12;
 // Change management.
 export const APPROACHES = {
   mandate: { speed: 1.20, trustHit: 10.5, cost: 0.0, knowledge: 0, authority: 0 },
-  consult: { speed: 0.45, trustHit: 2, cost: 1.5, knowledge: 1, authority: 0 },
-  joint:   { speed: 0.50, trustHit: 6, cost: 3.0, knowledge: 1, authority: 1 },
+  consult: { speed: 0.48, trustHit: 2, cost: 1.5, knowledge: 1, authority: 0 },
+  joint:   { speed: 0.50, trustHit: 3, cost: 3.0, knowledge: 1, authority: 1 },
 };
 export const CHANGE_COST = 1.5;        // $M per star point changed
 export const MAX_CHANGES = 2;          // per round
@@ -168,7 +168,7 @@ export const TRUST_CAP = { physicians: 'expertise', nurses: 'responsiveness', ad
 // Exploration and pilots.
 export const EXPLORE_RETURN = 0.6;    // adaptability points per $M on success
 export const PILOT_ROUND = 4;
-export const PILOT_COST = 3.0;
+export const PILOT_COST = 3.6;
 export const PILOT_CHRONIC_CAP = 0.20; // extra chronic capacity share
 export const PILOT_COORD = 16;         // coordination bonus inside the pilot unit (chronic only)
 

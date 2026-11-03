@@ -1,6 +1,7 @@
 // Balance tournament: many seeded games of 12-17 bot teams. Writes balance_report.json
 import * as E from '../engine/engine.js';
-import { botDecision, PROFILES } from '../engine/bots.js';
+import { PROFILES } from '../engine/bots.js';
+import { botPicks, picksToDecision } from '../engine/deck.js';
 import { writeFileSync } from 'node:fs';
 const N = +(process.argv[2] || 400);
 const stats = {}; const add = (k, v) => ((stats[k] ||= []).push(v));
@@ -11,7 +12,7 @@ for (let g = 0; g < N; g++) {
   const teams = regions.map((r, i) => ({ id: 'b' + i, name: 'B' + i, region: r, bot: PROFILES[(i + g) % 5] }));
   let s = E.createGame({ seed: g + 1, teams });
   for (let r = 1; r <= 5; r++) {
-    const d = {}; for (const t of teams) d[t.id] = botDecision(s, t.id, t.bot, g + 1);
+    const d = {}; for (const t of teams) d[t.id] = picksToDecision(s, t.id, botPicks(s, t.id, t.bot, g + 1));
     s = E.resolveRound(s, d);
     for (const [rid, ro] of Object.entries(s.log.at(-1).regions)) for (const m of ['primary','specialty','chronic']) {
       const served = s.regions[rid].teams.reduce((a, id) => a + s.teams[id].history.at(-1).served[m], 0);

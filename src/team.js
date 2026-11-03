@@ -14,7 +14,7 @@ const driver = {
     return {
       code, key: code, teamId: r.teamId, name: r.name, status: pub.status || 'lobby', round, timer: pub.timer || null,
       state: view?.state || null, region: view?.state?.teams?.[r.teamId]?.region || pub.teams?.find(t => t.id === r.teamId)?.region || null,
-      submitted: !!r.draft, decision: r.draft, publicTeams: pub.teams || [], events: view?.events || pub.events || {}, final: pub.final || null,
+      submitted: !!r.draft, decision: r.draft, publicTeams: pub.teams || [], events: view?.events || pub.events || {}, final: pub.final || null, reveal: view?.reveal || null,
     };
   },
   submit: d => net.submit(code, me.teamToken, round, d),
