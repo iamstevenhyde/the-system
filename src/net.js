@@ -64,8 +64,7 @@ export class LocalNet {
     name = String(name || '').trim();
     const same = Object.values(s.teams).find(t => t.name.toLowerCase() === name.toLowerCase());
     if (same) {
-      if (token && same.token === token) return { teamId: same.id, teamToken: token, code: s.code };
-      throw new Error('name taken');
+      return { teamId: same.id, teamToken: same.token, code: s.code };   // same name on another device joins that team
     }
     if (s.status !== 'lobby') throw new Error('game already started; ask the instructor to add you');
     if (name.length < 2 || name.length > 40) throw new Error('bad name');

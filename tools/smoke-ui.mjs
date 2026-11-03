@@ -20,7 +20,7 @@ await bad(net.hostGet(code, 'wrong'), /not authorized/);
 // 6 human teams; rejoin needs the saved token
 const humans = [];
 for (let i = 0; i < 6; i++) humans.push(await net.join(code, 'Team ' + (i + 1)));
-await bad(net.join(code, 'team 1'), /name taken/);
+{ const second = await net.join(code, 'team 1'); chk(second.teamId === humans[0].teamId && second.teamToken === humans[0].teamToken, 'second device with same name joins that team'); }
 chk((await net.join(code, 'team 1', humans[0].teamToken)).teamId === humans[0].teamId, 'rejoin with token');
 await bad(net.submit(code, humans[0].teamToken, 1, {}), /locked/);
 await bad(net.teamView(code, 'nope'), /not authorized/);
